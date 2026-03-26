@@ -42,15 +42,31 @@ class FootballAgent(CellAgent):
         return {action: self.INITIAL_Q_VALUE for action in self.ACTIONS}
 
     def _initialize_q_table(self) -> dict:
-        """Pre-populate all encoded state combinations with optimistic Q-values."""
+        """Pre-populate all encoded state combinations.
+
+        For states where the agent has the ball (hasBall=1), we seed a small
+        directional bias toward the actions that advance the ball into the
+        opponent half.  Team A scores at high col → prefer move_up/upright.
+        Team B scores at low col → prefer move_down/downleft.
+        This gives agents a head-start so they don't need thousands of random
+        steps just to discover which direction the opponent goal is.
+        """
         q_table = {}
+        advance_actions_A = {"move_up", "move_upright", "move_upleft"}
+        advance_actions_B = {"move_down", "move_downright", "move_downleft"}
+        advance_actions = advance_actions_A if self.team == "A" else advance_actions_B
+
         for rowBin in range(4):
             for colBin in range(4):
                 for ballDistBin in [0, 1, 2, 3]:
                     for hasBall in [0, 1]:
                         for oppNearby in [0, 1]:
                             state = (rowBin, colBin, ballDistBin, hasBall, oppNearby)
-                            q_table[state] = self._default_q_values()
+                            vals = self._default_q_values()
+                            if hasBall == 1:
+                                for a in advance_actions:
+                                    vals[a] = self.INITIAL_Q_VALUE + 0.1
+                            q_table[state] = vals
         return q_table
 
     def _players(self, same_team: bool | None = None):
@@ -122,13 +138,15 @@ class FootballAgent(CellAgent):
     def encode_state(self) -> tuple:
         """
         Encode beliefs into a small, hashable state tuple for Q-table indexing.
-        
+
         Returns a 5-element tuple:
-          - ball_dist_bin: distance to ball (0=close, 1=mid, 2=far, 3=unknown)
-          - has_ball: whether agent has ball (0/1)
-          - opp_nearby: opponent within 2 cells (0/1)
-          - ball_half: which half ball is in (0=own, 1=opp, -1=unknown)
-          - my_half: which half agent is in (0=own, 1=opp)
+          - rowBin:        coarse row position (0-3)
+          - colBin:        team-relative column bin — 0 means near own goal,
+                           3 means near opponent goal (so both teams learn
+                           "advance = higher colBin" without contradictory Q-values)
+          - ballDistBin:   distance to ball (0=close ≤2, 1=mid ≤5, 2=far, 3=unknown)
+          - hasBall:       whether this agent possesses the ball (0/1)
+          - oppNearby:     nearest opponent is within 2 cells (0/1)
         """
         myPos = self.cell.coordinate if self.cell else (0, 0)
         ballPos = self.beliefs["ball_position"]
@@ -136,9 +154,15 @@ class FootballAgent(CellAgent):
         height = self.model.scenario.height
         width = self.model.scenario.width
 
-        # coarse position bins
+        # coarse row bin (absolute — same meaning for both teams)
         rowBin = min(3, myPos[0] * 4 // height)
-        colBin = min(3, myPos[1] * 4 // width)
+
+        # team-relative column bin: flip for team B so both teams encode
+        # "distance already covered toward opponent goal" the same way
+        col = myPos[1]
+        if self.team == "B":
+            col = (width - 1) - col
+        colBin = min(3, col * 4 // width)
 
         if ballPos is None:
             ballDistBin = 3
@@ -279,8 +303,16 @@ class FootballAgent(CellAgent):
         carrier = self._carrier()
         maxDist = self.model.scenario.width + self.model.scenario.height
 
+        # Goal reward — consume the flag so it fires exactly once per agent per goal
         currentStep = int(getattr(self.model, "steps", 0))
-        if getattr(self.model, "last_goal_step", -1) == currentStep and hasattr(self.model, "last_goal"):
+        rewardedKey = f"_goal_reward_claimed_{self.unique_id}"
+        alreadyClaimed = getattr(self.model, rewardedKey, -1)
+        if (
+            getattr(self.model, "last_goal_step", -1) == currentStep
+            and hasattr(self.model, "last_goal")
+            and alreadyClaimed != currentStep
+        ):
+            setattr(self.model, rewardedKey, currentStep)
             scorer = self.model.last_goal.get("team")
             reward += 10.0 if scorer == self.team else -10.0
 
@@ -288,23 +320,31 @@ class FootballAgent(CellAgent):
             oppGoal = self._opponent_goal_center()
 
             if self._has_ball():
-                # carrier proximity shaping
+                # Carrier: reward closing distance to opponent goal
                 currDist = self._manhattan(myPos, oppGoal)
                 reward += (maxDist - currDist) / maxDist
-                # anti-loop step cost
-                reward -= 0.05
+                # Anti-loop: penalise revisiting the same cell
+                if self.prevPos is not None and myPos == self.prevPos:
+                    reward -= 0.3
+                else:
+                    reward -= 0.05  # small step cost even when moving
 
             elif carrier is not None and carrier.team == self.team:
-                # teammate support shaping
+                # Teammate support: stay in a useful supporting lane
                 distToCarrier = self._manhattan(myPos, carrier.cell.coordinate)
                 distToOppGoal = self._manhattan(myPos, oppGoal)
                 reward += (maxDist - distToOppGoal) / maxDist * 0.3
                 reward += 0.2 if 2 <= distToCarrier <= 5 else 0.0
+                # Anti-loop for off-ball agents too
+                if self.prevPos is not None and myPos == self.prevPos:
+                    reward -= 0.15
 
             else:
-                # pressure loose ball
+                # No teammate has ball — pressure the ball
                 distToBall = self._manhattan(myPos, ballPos)
                 reward += (maxDist - distToBall) / maxDist * 0.2
+                if self.prevPos is not None and myPos == self.prevPos:
+                    reward -= 0.15
 
         self.prevPos = myPos
         return reward

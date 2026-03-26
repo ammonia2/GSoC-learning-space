@@ -52,7 +52,10 @@ def _stateForCell(model, team: str, coord: tuple[int, int]) -> tuple:
     ballPos = model.ball.position
 
     rowBin = min(3, row * 4 // height)
-    colBin = min(3, col * 4 // width)
+
+    # team-relative column: mirrors encode_state so heatmap aligns with learned Q-values
+    relCol = col if team == "A" else (width - 1) - col
+    colBin = min(3, relCol * 4 // width)
 
     if ballPos is None:
         ballDistBin = 3
