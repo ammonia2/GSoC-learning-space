@@ -12,7 +12,7 @@ I found the organisation through GSoC. Using Mesa I found that I had a lot of co
 ## What I want to learn
 <!-- What aspects of Mesa or ABM are you most interested in? What skills do you want to develop? -->
 My football model had abstractions including implicit behavioural states that are not visualised or tracked, step function simulating multiple actions (passing and tackling bundled into a single action) etc. I want to learn how to build the abstractions that are general enough to support BDI, needs-based and SARSA alike models while not being over done.
-These are the abstractions I want to learn to build correctly: the Action Framework and State Management components from [Mesa discussion 2538](https://github.com/mesa/mesa/discussions/2538). The design question that interests me is the one EwoutH and tpike3 were debating, what is the minimal "genetic code" that lets users instantiate a wide range of behavioural theories without Mesa becoming another unmaintained side project?
+I want to work on the Action Framework and State Management components from [Mesa discussion 2538](https://github.com/mesa/mesa/discussions/2538). The design question that interests me is precisely the one EwoutH and tpike3 were debating, what is the minimal "genetic code" that lets users instantiate a wide range of behavioural theories without Mesa becoming another unmaintained side project?
 
 ## Where I want to go
 <!-- What's your goal with contributing to Mesa? What kind of contributions do you see yourself making? -->
