@@ -75,7 +75,7 @@ heatmap interpretation:
 
 ## What I learned
 
-- state design decides whether SARSA can learn direction at all
+- state design decides whether SARSA can learn direction at all (without it, team B just loops around its own goal)
 - team-relative column encoding was necessary; without it both teams learned contradictory Q-values for the same states
 - reward shaping can create loops if progress is not asymmetric
 - per-team visual diagnostics are essential for debugging policy drift
