@@ -212,7 +212,6 @@ class Football(Model):
             scorer, pos = scored
             if self.register_goal(scorer, pos):
                 kickoff_team = "A" if scorer == "B" else "B"
-                print(f"[GOAL] step={self.steps} scorer={scorer} pos={pos} score={self.score}\n")
                 self._reset_kickoff(kickoff_team=kickoff_team)
         elif self.ball.position is not None and self._is_out_of_bounds(self.ball.position):
             kickoff_team = (
@@ -220,7 +219,6 @@ class Football(Model):
                 else "A" if self.last_touch_team == "B"
                 else None
             )
-            print(f"[OOB] step={self.steps} ball_pos={self.ball.position} last_touch={self.last_touch_team} carrier={self.ball_carrier.team if self.ball_carrier else None}\n")
             self._reset_kickoff(kickoff_team=kickoff_team)
 
         self.datacollector.collect(self)

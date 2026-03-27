@@ -44,7 +44,7 @@ class FootballAgent(CellAgent):
     def _initialize_q_table(self) -> dict:
         """Pre-populate all encoded state combinations.
 
-        For states where the agent has the ball (hasBall=1), we seed a small
+        For states where the agent has the ball (hasBall=1), there is a small
         directional bias toward the actions that advance the ball into the
         opponent half.  Team A scores at high col → prefer move_up/upright.
         Team B scores at low col → prefer move_down/downleft.
@@ -218,17 +218,7 @@ class FootballAgent(CellAgent):
         """Execute the selected action: move, pass, tackle."""
         if self.cell is None:
             return
-        
-        if self._has_ball():
-            neighbors = list(self.cell.connections.values())
-            canEnter = [c.coordinate for c in neighbors if self._can_enter_cell(c)]
-            blocked = [c.coordinate for c in neighbors if not self._can_enter_cell(c)]
-            oppGoal = self._opponent_goal_center()
-            print(f"[carrier {self.team}] pos={self.cell.coordinate} action={action} "
-                f"opp_goal={oppGoal} can_enter={canEnter} blocked={blocked} "
-                f"epsilon={self.epsilon:.3f} q_vals={self.q_table.get(self.encode_state())}")
 
-        # screen axes remap
         directionMap = {
             "move_right": (1, 0),
             "move_left": (-1, 0),

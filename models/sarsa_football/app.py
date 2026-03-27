@@ -6,12 +6,14 @@ import matplotlib.patches as mpatches
 import numpy as np
 import solara
 from matplotlib.figure import Figure
+
 from agents import FootballAgent, Goal
 from model import Football, FootballScenario
-from mesa.visualization import Slider, SolaraViz, SpaceRenderer, make_plot_component
+from mesa.visualization import Slider, SolaraViz, SpaceRenderer
 from mesa.visualization.components import AgentPortrayalStyle
 from mesa.visualization.utils import update_counter
 
+scoreHistory = {"step": [], "A": [], "B": []}
 
 def footballPortrayal(agent):
     """Map model agents to matplotlib visual styles for rendering."""
@@ -30,7 +32,7 @@ def footballPortrayal(agent):
 def postProcess(ax):
     """Apply chart annotations and legend after each render pass."""
     m = model
-    ax.set_title(f"Grid Football  |  A: {m.score['A']}  —  B: {m.score['B']}", fontsize=11)
+    ax.set_title("Grid Football", fontsize=11)
     ax.set_xlim(-1, m.width)
     ax.set_ylim(-1, m.height)
     ax.set_aspect("equal")
@@ -53,7 +55,7 @@ def _stateForCell(model, team: str, coord: tuple[int, int]) -> tuple:
 
     rowBin = min(3, row * 4 // height)
 
-    # team-relative column: mirrors encode_state so heatmap aligns with learned Q-values
+    # team-relative column mirrors encode_state.
     relCol = col if team == "A" else (width - 1) - col
     colBin = min(3, relCol * 4 // width)
 
@@ -68,10 +70,16 @@ def _stateForCell(model, team: str, coord: tuple[int, int]) -> tuple:
     if carrier is not None and carrier.cell is not None:
         hasBall = int(carrier.team == team and carrier.cell.coordinate == coord)
 
-    opponents = [a for a in model.agents if isinstance(a, FootballAgent) and a.team != team and a.cell is not None]
+    opponents = [
+        a for a in model.agents
+        if isinstance(a, FootballAgent) and a.team != team and a.cell is not None
+    ]
     oppNearby = 0
     if opponents:
-        minOppDist = min(abs(row - a.cell.coordinate[0]) + abs(col - a.cell.coordinate[1]) for a in opponents)
+        minOppDist = min(
+            abs(row - a.cell.coordinate[0]) + abs(col - a.cell.coordinate[1])
+            for a in opponents
+        )
         oppNearby = int(minOppDist <= 2)
 
     return (rowBin, colBin, ballDistBin, hasBall, oppNearby)
@@ -116,7 +124,7 @@ def _buildVGrids(model) -> dict[str, np.ndarray]:
 
 @solara.component
 def VGridComponent(model):
-    """Render per-cell V(s)=max_a Q(s,a) heatmaps for Team A and Team B."""
+    """Render per-cell V(s)=max_a Q(s,a) heatmaps for both teams."""
     tick = update_counter.get()
 
     gridByTeam = _buildVGrids(model)
@@ -132,7 +140,7 @@ def VGridComponent(model):
     vmin, vmax = globalVmin, globalVmax
 
     def makeFigure():
-        f = Figure(figsize=(10, 4), dpi=100, constrained_layout=True)
+        f = Figure(figsize=(6.2, 3.4), dpi=100, constrained_layout=True)
         axs = f.subplots(1, 2)
         for idx, (team, grid) in enumerate(zip(["A", "B"], [gridA, gridB])):
             im = axs[idx].imshow(grid, cmap="viridis", origin="lower", vmin=vmin, vmax=vmax)
@@ -147,6 +155,42 @@ def VGridComponent(model):
         solara.FigureMatplotlib(fig, format="png", bbox_inches="tight", dependencies=[tick])
 
 
+@solara.component
+def ScoreComponent(model):
+    """Render score progression plot in diagnostics panel."""
+    tick = update_counter.get()
+    step = int(getattr(model, "steps", 0))
+
+    if not scoreHistory["step"] or scoreHistory["step"][-1] != step:
+        scoreHistory["step"].append(step)
+        scoreHistory["A"].append(float(model.score.get("A", 0)))
+        scoreHistory["B"].append(float(model.score.get("B", 0)))
+
+    def makeFigure():
+        f = Figure(figsize=(6.2, 2.2), dpi=100, constrained_layout=True)
+        ax = f.subplots(1, 1)
+        ax.plot(scoreHistory["step"], scoreHistory["A"], color="tab:red", label="score_A")
+        ax.plot(scoreHistory["step"], scoreHistory["B"], color="tab:blue", label="score_B")
+        ax.set_title("Score Over Steps")
+        ax.set_xlabel("step")
+        ax.set_ylabel("score")
+        ax.grid(True, alpha=0.2)
+        ax.legend(loc="upper left", fontsize=8)
+        return f
+
+    fig = solara.use_memo(makeFigure, dependencies=[tick, len(scoreHistory["step"])])
+    if fig is not None:
+        solara.FigureMatplotlib(fig, format="png", bbox_inches="tight", dependencies=[tick])
+
+
+@solara.component
+def DiagnosticsComponent(model):
+    """Render right-panel diagnostics in a fixed vertical stack."""
+    with solara.Column(style={"gap": "8px"}):
+        ScoreComponent(model)
+        VGridComponent(model)
+
+
 model = Football(scenario=FootballScenario())
 
 renderer = SpaceRenderer(model, backend="matplotlib")
@@ -154,8 +198,6 @@ renderer.setup_agents(footballPortrayal)
 renderer.draw_structure()
 renderer.draw_agents()
 renderer.post_process = postProcess
-
-scorePlot = make_plot_component({"score_A": "tab:red", "score_B": "tab:blue"})
 
 modelParams = {
     "width": Slider("Grid Width", 10, 10, 30),
@@ -167,7 +209,7 @@ modelParams = {
 page = SolaraViz(
     model,
     renderer,
-    components=[scorePlot, VGridComponent],
+    components=[DiagnosticsComponent],
     model_params=modelParams,
     name="Grid Football",
 )
